@@ -64,6 +64,8 @@ func main() {
 		}
 		log.Println("Graceful shutdown complete.")
 	}
+
+	router.Run(":8080")
 }
 
 func httpErrorBadRequest(err error, ctx *gin.Context) {
@@ -78,6 +80,3 @@ func httpError(err error, ctx *gin.Context, status int) {
 	log.Println(err.Error())
 	ctx.String(status, err.Error())
 }
-
-router.Run(":8080")
-
