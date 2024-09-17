@@ -78,3 +78,6 @@ func httpError(err error, ctx *gin.Context, status int) {
 	log.Println(err.Error())
 	ctx.String(status, err.Error())
 }
+
+router.Run(":8080")
+
