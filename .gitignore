@@ -1,1 +1,7 @@
 /golang-demo
+*.backup
+*.hcl
+terraform/.terraform/providers/registry.terraform.io/hashicorp/aws/5.70.0/windows_amd64/LICENSE.txt
+*.exe
+terraform/silly-demo-key
+terraform/terraform.tfstate
