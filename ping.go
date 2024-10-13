@@ -28,5 +28,5 @@ func pingHandler(ctx *gin.Context) {
 		return
 	}
 	slog.Info(resp.String())
-	ctx.String(http.StatusOK, resp.String())
+	ctx.String(http.StatusOK, "Hot-reload works!")
 }

@@ -25,18 +25,20 @@ func getDB(c *gin.Context) *pg.DB {
 	if dbSession != nil {
 		return dbSession
 	}
-	endpoint := os.Getenv("DB_ENDPOINT")
-	if len(endpoint) == 0 {
-		slog.Error("Environment variable `DB_ENDPOINT` is empty")
-		c.String(http.StatusBadRequest, "Environment variable `DB_ENDPOINT` is empty")
+
+	// Get individual environment variables
+	host := os.Getenv("DB_HOST")
+	if len(host) == 0 {
+		slog.Error("Environment variable `DB_HOST` is empty")
+		c.String(http.StatusBadRequest, "Environment variable `DB_HOST` is empty")
 		return nil
 	}
+
 	port := os.Getenv("DB_PORT")
 	if len(port) == 0 {
-		slog.Error("Environment variable `DB_PORT` is empty")
-		c.String(http.StatusBadRequest, "Environment variable `DB_PORT` is empty")
-		return nil
+		port = "5432" // Default PostgreSQL port if DB_PORT is not provided
 	}
+
 	user := os.Getenv("DB_USER")
 	if len(user) == 0 {
 		user = os.Getenv("DB_USERNAME")
@@ -46,23 +48,30 @@ func getDB(c *gin.Context) *pg.DB {
 			return nil
 		}
 	}
+
 	pass := os.Getenv("DB_PASS")
 	if len(pass) == 0 {
 		pass = os.Getenv("DB_PASSWORD")
 		if len(pass) == 0 {
-			slog.Error("Environment variables `DB_PASS` and `DB_PASSWORD are empty")
-			c.String(http.StatusBadRequest, "Environment variables `DB_PASS` and `DB_PASSWORD are empty")
+			slog.Error("Environment variables `DB_PASS` and `DB_PASSWORD` are empty")
+			c.String(http.StatusBadRequest, "Environment variables `DB_PASS` and `DB_PASSWORD` are empty")
 			return nil
 		}
 	}
+
 	name := os.Getenv("DB_NAME")
 	if len(name) == 0 {
 		slog.Error("Environment variable `DB_NAME` is empty")
 		c.String(http.StatusBadRequest, "Environment variable `DB_NAME` is empty")
 		return nil
 	}
-	dbSession := pg.Connect(&pg.Options{
-		Addr:     endpoint + ":" + port,
+
+	// Construct the PostgreSQL connection string (DB_ENDPOINT) inside the code
+	endpoint := fmt.Sprintf("%s:%s", host, port)
+
+	// Establish the database connection
+	dbSession = pg.Connect(&pg.Options{
+		Addr:     endpoint,
 		User:     user,
 		Password: pass,
 		Database: name,
@@ -127,6 +136,10 @@ func videoPostHandler(ctx *gin.Context) {
 	}
 	if strings.ToLower(os.Getenv("DB")) == "fs" {
 		videos, err := getVideosFromFile()
+		if err != nil {
+			httpErrorInternalServerError(err, ctx)
+			return
+		}
 		videos = append(videos, *video)
 		dir := os.Getenv("FS_DIR")
 		if len(dir) == 0 {
