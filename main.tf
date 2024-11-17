@@ -1,34 +1,21 @@
 provider "aws" {
-  region = "us-east-1"
+  region = "eu-north-1"
 }
 
-variable "instance_count" {
-  default = 2
-}
-
-variable "instance_type" {
-  default = "t2.micro"
-}
-
-variable "ami_id" {
-  description = "Amazon Linux 2 AMI"
-  default     = "ami-06b21ccaeff8cd686"
-}
-
-resource "aws_security_group" "silly_demo_sg" {
-  name        = "silly-demo-sg"
-  description = "Allow HTTP and SSH"
+resource "aws_security_group" "web_sg" {
+  name_prefix = "web-sg"
+  description = "Allow HTTP and SSH traffic"
 
   ingress {
-    from_port   = 80
-    to_port     = 80
+    from_port   = 22
+    to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    from_port   = 22
-    to_port     = 22
+    from_port   = 80
+    to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -41,60 +28,77 @@ resource "aws_security_group" "silly_demo_sg" {
   }
 }
 
-resource "aws_instance" "silly_demo" {
-  count         = var.instance_count
-  ami           = var.ami_id
-  instance_type = var.instance_type
-  security_groups = [aws_security_group.silly_demo_sg.name]
-  user_data     = file("userdata.sh") # my own script
+resource "aws_launch_template" "app_template" {
+  name_prefix = "silly-demo-lt-"
 
-  tags = {
-    Name = "silly-demo-${count.index + 1}"
-  }
+  image_id      = "ami-08eb150f611ca277f"
+  instance_type = "t3.micro"
+
+  key_name = "kube-hw-kp" 
+
+  user_data = <<-EOT
+              #!/bin/bash
+              sudo yum update -y
+              sudo amazon-linux-extras enable nginx1
+              sudo yum install -y nginx
+              sudo systemctl start nginx
+              sudo systemctl enable nginx
+              echo "<h1>Silly Demo</h1>" | sudo tee /usr/share/nginx/html/index.html
+
+              # Install Go and Run silly-demo app
+              sudo yum install -y golang
+              cd /home/ec2-user
+              echo 'package main; import "fmt"; func main() { fmt.Println("Silly Demo App Running") }' > main.go
+              go build -o silly-demo main.go
+              chmod +x silly-demo
+              ./silly-demo &
+              EOT
 }
 
-resource "aws_lb" "silly_demo_lb" {
-  name               = "silly-demo-lb"
+resource "aws_autoscaling_group" "app_asg" {
+  launch_template {
+    id      = aws_launch_template.app_template.id
+    version = "$Latest"
+  }
+
+  min_size = 1
+  desired_capacity = 1
+  max_size = 2
+
+  vpc_zone_identifier = ["subnet-0a12b34c56d78e9f0"] 
+  target_group_arns   = [aws_lb_target_group.app_tg.arn]
+
+  tags = [
+    {
+      key                 = "Name"
+      value               = "Silly-Demo-Instance"
+      propagate_at_launch = true
+    }
+  ]
+}
+
+resource "aws_lb" "app_lb" {
+  name               = "app-lb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.silly_demo_sg.id]
-  subnets            = ["subnet-0553244e75a26376c", "subnet-0a9befe8cbeefaa71"]
+  security_groups    = [aws_security_group.web_sg.id]
+  subnets            = ["subnet-0a12b34c56d78e9f0"]
 }
 
-resource "aws_lb_target_group" "silly_demo_tg" {
-  name     = "silly-demo-tg"
+resource "aws_lb_target_group" "app_tg" {
+  name     = "app-tg"
   port     = 80
   protocol = "HTTP"
-  vpc_id   = "vpc-0abeebb898e64407d"
-
-  health_check {
-    path                = "/"
-    interval            = 30
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    matcher             = "200"
-  }
-}
-
-resource "aws_lb_target_group_attachment" "silly_demo_attach" {
-  for_each = aws_instance.silly_demo
-  target_group_arn = aws_lb_target_group.silly_demo_tg.arn
-  target_id        = each.value.id
-  port             = 80
+  vpc_id   = "vpc-0a12b34c56d78e9f0" # Replace with your VPC ID
 }
 
 resource "aws_lb_listener" "http_listener" {
-  load_balancer_arn = aws_lb.silly_demo_lb.arn
+  load_balancer_arn = aws_lb.app_lb.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.silly_demo_tg.arn
+    target_group_arn = aws_lb_target_group.app_tg.arn
   }
-}
-
-output "alb_dns_name" {
-  value = aws_lb.silly_demo_lb.dns_name
 }
